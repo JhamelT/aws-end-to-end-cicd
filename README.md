@@ -5,23 +5,29 @@ In this step, we'll create an AWS CodePipeline to automate the continuous integr
 ### Navigate to AWS CodePipeline
 
 • Go to the AWS Management Console and navigate to the AWS CodePipeline service.
+
 • Click on the "Create pipeline" button.
 
 ### Configure Pipeline Settings
 
 • Provide a name for your pipeline.
+
 • Click on the "Next" button.
 
 ### Configure Source Stage
 
 • For the source stage, select "GitHub" as the source provider.
+
 • Connect your GitHub account to AWS CodePipeline and select your repository.
+
 • Choose the branch you want to use for your pipeline.
 
 ### Configure Build Stage
 
 • In the build stage, select "AWS CodeBuild" as the build provider.
+
 • Create a new CodeBuild project by clicking on the "Create project" button.
+
 • Configure the CodeBuild project with the necessary settings for your Python application:
   • Build environment
   • Build commands
@@ -35,6 +41,7 @@ In this step, we'll create an AWS CodePipeline to automate the continuous integr
 ### Create Pipeline
 
 • Review the pipeline configuration.
+
 • Click on the "Create pipeline" button to create your AWS CodePipeline.
 
 Great! Now that we have our CodePipeline set up, we can move on to the next step.
