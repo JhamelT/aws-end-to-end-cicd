@@ -2,10 +2,10 @@ version: 0.0
 os: linux
 files:
   - source: simple-python-app/
-    destination: /opt/simple-python-app
+    destination: /simple-python-app
     overwrite: yes
 permissions:
-  - object: /opt/simple-python-app/scripts/
+  - object: /simple-python-app/scripts/
     pattern: "**"
     owner: root
     group: root
