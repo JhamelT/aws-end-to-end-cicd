@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 set -e
 
 # Pull the Docker Image from Docker Hub - Copy Docker Pull Command
