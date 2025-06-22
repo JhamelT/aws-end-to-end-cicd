@@ -1,15 +1,5 @@
 version: 0.0
 os: linux
-files:
-  - source: /
-    destination: /deployment
-    overwrite: yes
-permissions:
-  - object: /deployment/
-    pattern: "*"
-    owner: root
-    group: root
-    mode: 755
 hooks:
   ApplicationStop:
     - location: stop_container.sh
