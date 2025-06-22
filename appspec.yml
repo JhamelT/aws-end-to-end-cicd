@@ -1,15 +1,6 @@
 version: 0.0
 os: linux
-files:
-  - source: simple-python-app/
-    destination: /simple-python-app
-    overwrite: yes
-permissions:
-  - object: /simple-python-app/scripts/
-    pattern: "**"
-    owner: root
-    group: root
-    mode: 755
+
 hooks:
   ApplicationStop:
     - location: scripts/stop_container.sh
