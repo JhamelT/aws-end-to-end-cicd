@@ -1,3 +1,6 @@
+version: 0.0
+os: linux
+
 hooks:
   ApplicationStop:
     - location: simple-python-app/stop_container.sh
