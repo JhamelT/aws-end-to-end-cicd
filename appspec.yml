@@ -5,17 +5,17 @@ files:
     destination: /deployment
     overwrite: yes
 permissions:
-  - object: /deployment/simple-python-app/scripts/
+  - object: /deployment/scripts/
     pattern: "**"
     owner: root
     group: root
     mode: 755
 hooks:
   ApplicationStop:
-    - location: simple-python-app/scripts/stop_container.sh
+    - location: scripts/stop_container.sh
       timeout: 300
       runas: root
   AfterInstall:
-    - location: simple-python-app/scripts/start_container.sh
+    - location: scripts/start_container.sh
       timeout: 300
       runas: root
