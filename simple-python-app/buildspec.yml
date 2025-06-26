@@ -39,5 +39,7 @@ phases:
 
 artifacts:
   files:
-    - '**/*'
-  name: deployment-package
+    - appspec.yml
+    - scripts/**/*
+    - simple-python-app/**/*
+  name: deployment-package-$(date +%Y-%m-%d)
