@@ -1,5 +1,8 @@
 #!/bin/bash
 set -e
 
-# Stop the running container (if any)
-echo "Hi"
+NAME="simple-python-app"
+
+# Stop & remove if present; do nothing if not
+docker rm -f "$NAME" >/dev/null 2>&1 || true
+echo "[stop] Ensured $NAME is not running."
