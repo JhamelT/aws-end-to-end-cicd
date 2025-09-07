@@ -1,53 +1,214 @@
-## Create an AWS CodePipeline 
+AWS End-to-End CI/CD for a Containerized Python App
 
-In this step, we'll create an AWS CodePipeline to automate the continuous integration process for our Python application. AWS CodePipeline will orchestrate the flow of changes from our GitHub repository to the deployment of our application. Let's go ahead and set it up:
+Hi, I’m Jha’Mel. This repo demonstrates an end-to-end CI/CD pipeline on AWS for a small Flask app running in Docker.
 
-### Navigate to AWS CodePipeline
+A push to this GitHub repo triggers AWS CodePipeline, which uses CodeBuild to build and push a Docker image to Docker Hub, then uses CodeDeploy to deploy the latest image on an EC2 instance.
 
-• Go to the AWS Management Console and navigate to the AWS CodePipeline service.
+🚀 What This Project Shows
 
-• Click on the "Create pipeline" button.
+Practical CI/CD on AWS: CodePipeline → CodeBuild → CodeDeploy
 
-### Configure Pipeline Settings
+Dockerized Python app with health endpoint
 
-• Provide a name for your pipeline.
+Secrets pulled from SSM Parameter Store in the build stage
 
-• Click on the "Next" button.
+Safe, simple lifecycle scripts to stop/remove the old container and run the new one
 
-### Configure Source Stage
+🔄 How It Works
 
-• For the source stage, select "GitHub" as the source provider.
+Source (GitHub)
+Commit to this repository triggers CodePipeline.
 
-• Connect your GitHub account to AWS CodePipeline and select your repository.
+Build (CodeBuild)
 
-• Choose the branch you want to use for your pipeline.
+Starts Docker-in-Docker
 
-### Configure Build Stage
+Logs into Docker Hub with creds from Parameter Store
 
-• In the build stage, select "AWS CodeBuild" as the build provider.
+Builds and pushes jhamelthorne/myapp:latest
 
-• Create a new CodeBuild project by clicking on the "Create project" button.
+Deploy (CodeDeploy on EC2)
 
-• Configure the CodeBuild project with the necessary settings for your Python application:
-  • Build environment
-  • Build commands
-  • Artifacts
-• Save the CodeBuild project and go back to CodePipeline.
+ApplicationStop → scripts/stop_container.sh
 
-### Configure Deployment
+AfterInstall → scripts/start_container.sh
 
-• Continue configuring the pipeline stages, such as deploying your application using AWS Elastic Beanstalk or any other suitable deployment option.
+Run (EC2)
 
-### Create Pipeline
+Container listens on port 5000
 
-• Review the pipeline configuration.
+Endpoints: / and /health
 
-• Click on the "Create pipeline" button to create your AWS CodePipeline.
+📂 Repository Structure
+.
+├─ appspec.yml               # CodeDeploy hooks → start/stop container
+├─ buildspec.yml             # CodeBuild → build & push Docker image
+├─ scripts/
+│  ├─ start_container.sh     # pull & run latest image
+│  └─ stop_container.sh      # stop/remove existing container
+└─ simple-python-app/
+   ├─ app.py                 # Flask app (/, /health)
+   ├─ requirements.txt       # flask
+   └─ Dockerfile             # EXPOSE 5000; CMD ["python","app.py"]
 
-Great! Now that we have our CodePipeline set up, we can move on to the next step.
+🗂 Key Files
+appspec.yml (CodeDeploy)
+version: 0.0
+os: linux
+hooks:
+  ApplicationStop:
+    - location: scripts/stop_container.sh
+      timeout: 300
+      runas: root
+  AfterInstall:
+    - location: scripts/start_container.sh
+      timeout: 300
+      runas: root
+
+buildspec.yml (CodeBuild – excerpt)
+version: 0.2
+env:
+  parameter-store:
+    DOCKER_REGISTRY_USERNAME: /myapp/docker-credentials/username
+    DOCKER_REGISTRY_PASSWORD: /myapp/docker-credentials/password
+    DOCKER_REGISTRY_URL: /myapp/docker-registry/url
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.11
+    commands:
+      - nohup /usr/local/bin/dockerd \
+        --host=unix:///var/run/docker.sock \
+        --host=tcp://127.0.0.1:2376 \
+        --storage-driver=overlay2 &
+      - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+  pre_build:
+    commands:
+      - echo $DOCKER_REGISTRY_PASSWORD | docker login -u $DOCKER_REGISTRY_USERNAME --password-stdin
+      - pip install -r simple-python-app/requirements.txt
+  build:
+    commands:
+      - cd simple-python-app
+      - docker build -t jhamelthorne/myapp:latest .
+      - docker push jhamelthorne/myapp:latest
+
+Lifecycle Scripts
+
+scripts/stop_container.sh
+
+#!/usr/bin/env bash
+set -e
+
+NAME="simple-python-app"
+docker rm -f "$NAME" >/dev/null 2>&1 || true
+echo "[stop] Ensured $NAME is not running."
 
 
-Create Pipeline
+scripts/start_container.sh
 
-Review the pipeline configuration
-Click on the "Create pipeline" button to create your AWS CodePipeline
+#!/usr/bin/env bash
+set -e
+
+IMAGE="jhamelthorne/myapp:latest"
+NAME="simple-python-app"
+PORT="5000"   # matches app.py and Dockerfile
+
+echo "[start] Pulling latest image: $IMAGE"
+docker pull "$IMAGE"
+
+echo "[start] Starting container $NAME on :$PORT"
+docker run -d --name "$NAME" --restart=always -p ${PORT}:5000 "$IMAGE"
+
+# Lightweight, non-fatal sanity check
+sleep 2
+if curl -fsS "http://localhost:${PORT}/health" >/dev/null; then
+  echo "[start] Health OK."
+else
+  echo "[start] App starting; health endpoint not ready yet."
+fi
+
+Application (Flask)
+
+app.py
+
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return '<h1>Hello, World! Your CI/CD Pipeline is working!</h1>'
+
+@app.route('/health')
+def health():
+    return {'status': 'healthy', 'message': 'Application is running successfully'}
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
+
+
+Dockerfile
+
+FROM python:3.8
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+EXPOSE 5000
+CMD ["python", "app.py"]
+
+⚙️ One-Time Setup
+
+EC2:
+
+Amazon Linux 2, Docker installed, CodeDeploy agent installed
+
+Security group allows inbound 5000 (or route via ALB)
+
+IAM:
+
+CodeBuild role: ssm:GetParameters, CloudWatch Logs
+
+CodeDeploy service role: standard deploy permissions
+
+EC2 instance profile: S3 read for CodeDeploy bundle
+
+Parameter Store:
+
+/myapp/docker-credentials/username
+
+/myapp/docker-credentials/password
+
+/myapp/docker-registry/url
+
+🏃 Run Locally
+cd simple-python-app
+docker build -t myapp:local .
+docker run -p 5000:5000 myapp:local
+
+
+Test at:
+
+http://localhost:5000
+
+http://localhost:5000/health
+
+🔧 Troubleshooting
+
+Port/name in use: handled by stop_container.sh
+
+Image push fails: check Docker Hub creds in Parameter Store
+
+App unreachable: confirm EC2 SG allows 5000; check docker logs simple-python-app
+
+Health flaky: run curl -v http://localhost:5000/health on EC2
+
+📈 Next Steps (Future Enhancements)
+
+Add a small pytest to test /health in CodeBuild
+
+Use python:3.11-slim as base image for security/performance
+
+Push to ECR and deploy with ECS Fargate
+
+Send logs to CloudWatch Logs and add alarms
