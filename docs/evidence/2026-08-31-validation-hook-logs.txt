@@ -1,0 +1,25 @@
+2026-08-31T01:31:31 {"msg": "validation start", "deployment_id": "d-HLI23CQFL", "endpoint": "http://release-demo-prod-408520657.us-east-1.elb.amazonaws.com:8080"}
+2026-08-31T01:31:32 {"msg": "expected release", "sha": "98d70f0", "version": "v1.0.3"}
+2026-08-31T01:31:32 {"msg": "attempt", "n": 1, "problems": []}
+2026-08-31T01:31:32 {"msg": "validation result", "status": "Succeeded", "problems": []}
+2026-08-31T01:44:21 {"msg": "validation start", "deployment_id": "d-BO9ROZPFL", "endpoint": "http://release-demo-prod-408520657.us-east-1.elb.amazonaws.com:8080"}
+2026-08-31T01:44:21 {"msg": "expected release", "sha": "738355a", "version": "v1.0.4"}
+2026-08-31T01:44:22 {"msg": "attempt", "n": 1, "problems": ["/version commit '98d70f0' != expected '738355a'", "/version version 'v1.0.3' != expected 'v1.0.4'"]}
+2026-08-31T01:44:27 {"msg": "attempt", "n": 2, "problems": ["/version commit '98d70f0' != expected '738355a'", "/version version 'v1.0.3' != expected 'v1.0.4'"]}
+2026-08-31T01:44:32 {"msg": "attempt", "n": 3, "problems": ["/version commit '98d70f0' != expected '738355a'", "/version version 'v1.0.3' != expected 'v1.0.4'"]}
+2026-08-31T01:44:37 {"msg": "attempt", "n": 4, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:44:42 {"msg": "attempt", "n": 5, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:44:47 {"msg": "attempt", "n": 6, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:44:52 {"msg": "attempt", "n": 7, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:44:57 {"msg": "attempt", "n": 8, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:02 {"msg": "attempt", "n": 9, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:07 {"msg": "attempt", "n": 10, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:12 {"msg": "attempt", "n": 11, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:17 {"msg": "attempt", "n": 12, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:22 {"msg": "attempt", "n": 13, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:27 {"msg": "attempt", "n": 14, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:32 {"msg": "attempt", "n": 15, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:37 {"msg": "attempt", "n": 16, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:42 {"msg": "attempt", "n": 17, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:47 {"msg": "attempt", "n": 18, "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}
+2026-08-31T01:45:52 {"msg": "validation result", "status": "Failed", "problems": ["/ready -> 503: {\"status\":\"not_ready\",\"checks\":{\"config_loaded\":true,\"secret_present\":true,\"dependencies\":false}}"]}

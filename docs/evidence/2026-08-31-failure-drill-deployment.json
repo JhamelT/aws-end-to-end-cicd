@@ -1,0 +1,11 @@
+{
+    "id": "d-BO9ROZPFL",
+    "st": "Failed",
+    "created": "2026-08-31T01:42:12.601000+00:00",
+    "end": "2026-08-31T01:45:53.189000+00:00",
+    "err": "The deployment failed because one or more of the lifecycle event validation functions failed.",
+    "rb": {
+        "rollbackDeploymentId": "d-DERNOMQFL",
+        "rollbackMessage": "Deployment d-BO9ROZPFL terminated. Automatic rollback is triggered with a DeploymentId d-DERNOMQFL."
+    }
+}

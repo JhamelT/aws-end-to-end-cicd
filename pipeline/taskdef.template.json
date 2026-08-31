@@ -25,7 +25,7 @@
         { "name": "APP_VERSION", "value": "${APP_VERSION}" },
         { "name": "GIT_SHA", "value": "${GIT_SHA}" },
         { "name": "BUILD_TIME", "value": "${BUILD_TIME}" },
-        { "name": "SIMULATE_FAILURE", "value": "true" }
+        { "name": "SIMULATE_FAILURE", "value": "false" }
       ],
       "secrets": [
         { "name": "APP_API_KEY", "valueFrom": "${APP_SECRET_ARN}" }
