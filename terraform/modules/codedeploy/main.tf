@@ -80,9 +80,9 @@ resource "aws_iam_role_policy" "hook" {
         Resource = "*"
       },
       {
-        Sid      = "ReadTaskDefinition"
+        Sid      = "ReadTaskSetsAndDefinitions"
         Effect   = "Allow"
-        Action   = ["ecs:DescribeTaskDefinition"]
+        Action   = ["ecs:DescribeTaskDefinition", "ecs:DescribeServices"]
         Resource = "*"
       }
     ]
@@ -115,6 +115,8 @@ resource "aws_lambda_function" "hook" {
   environment {
     variables = {
       TEST_ENDPOINT    = var.test_endpoint
+      CLUSTER_NAME     = var.cluster_name
+      SERVICE_NAME     = var.service_name
       MAX_WAIT_SECONDS = "90"
     }
   }

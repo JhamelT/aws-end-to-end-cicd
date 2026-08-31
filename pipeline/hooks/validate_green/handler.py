@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 import urllib.error
 import urllib.request
@@ -28,6 +27,8 @@ import urllib.request
 import boto3
 
 TEST_ENDPOINT = os.environ["TEST_ENDPOINT"].rstrip("/")  # e.g. http://<alb-dns>:8080
+CLUSTER_NAME = os.environ["CLUSTER_NAME"]
+SERVICE_NAME = os.environ["SERVICE_NAME"]
 MAX_WAIT_S = int(os.environ.get("MAX_WAIT_SECONDS", "90"))
 POLL_S = 5
 
@@ -47,15 +48,18 @@ def _get(path: str, timeout: float = 5.0) -> tuple[int, str]:
 
 
 def _expected_release(deployment_id: str) -> tuple[str, str]:
-    """Return (git_sha, app_version) from the task definition this deployment registers."""
-    info = codedeploy.get_deployment(deploymentId=deployment_id)["deploymentInfo"]
-    appspec = info["revision"]["appSpecContent"]["content"]
-    # Grab the task definition ARN without pulling a YAML dependency into the Lambda package.
-    match = re.search(r"TaskDefinition:\s*[\"']?(arn:aws:ecs:[^\s\"']+)", appspec)
-    if not match:
-        raise RuntimeError("could not find TaskDefinition ARN in AppSpec")
-    taskdef_arn = match.group(1)
-    td = ecs.describe_task_definition(taskDefinition=taskdef_arn)["taskDefinition"]
+    """
+    Return (git_sha, app_version) from the task definition of the GREEN task set.
+
+    CodeDeploy tags the ECS task set it creates with externalId = deployment ID, so
+    this works regardless of how the revision was registered (CodePipeline stores
+    it as an S3 revision, a direct `create-deployment` as AppSpecContent).
+    """
+    service = ecs.describe_services(cluster=CLUSTER_NAME, services=[SERVICE_NAME])["services"][0]
+    green = next((ts for ts in service.get("taskSets", []) if ts.get("externalId") == deployment_id), None)
+    if green is None:
+        raise RuntimeError(f"no task set with externalId={deployment_id} on {SERVICE_NAME}")
+    td = ecs.describe_task_definition(taskDefinition=green["taskDefinition"])["taskDefinition"]
     container = td["containerDefinitions"][0]
     env = {e["name"]: e["value"] for e in container.get("environment", [])}
     image_tag = container["image"].rsplit(":", 1)[-1]

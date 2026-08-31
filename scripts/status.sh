@@ -10,7 +10,7 @@ echo "== CodePipeline: ${PIPELINE}"
 aws codepipeline get-pipeline-state --name "$PIPELINE" \
   --query 'stageStates[].{stage:stageName,status:latestExecution.status}' --output table
 
-DEPLOYMENT_ID="$(aws deploy list-deployments --application-name "$APP" --query 'deployments[0]' --output text)"
+DEPLOYMENT_ID="$(aws deploy list-deployments --application-name "$APP" --deployment-group-name "$APP" --query 'deployments[0]' --output text)"
 if [[ "$DEPLOYMENT_ID" != "None" ]]; then
   echo "== CodeDeploy: latest deployment ${DEPLOYMENT_ID}"
   aws deploy get-deployment --deployment-id "$DEPLOYMENT_ID" \
