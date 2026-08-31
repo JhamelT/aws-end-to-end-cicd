@@ -6,7 +6,7 @@ This is the second version of this repository. [v1](https://github.com/JhamelT/a
 
 ## The scenario
 
-A small SaaS team deploys a Python API by hand. Every release causes a blip of downtime, nobody is sure which commit is running in production, and rolling back means finding someone who remembers what the last good build was. The ask: make releases boring.
+A small SaaS company currently deploys its Python API manually to production. Releases create downtime, rollback requires rebuilding the previous version, and there is no consistent test or security gate. I designed an AWS-native CI/CD pipeline that builds and scans each container image, deploys it to an isolated green environment, validates application health, and shifts production traffic only after approval.
 
 Success criteria I designed against:
 

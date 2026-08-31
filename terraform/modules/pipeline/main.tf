@@ -446,7 +446,7 @@ resource "aws_codepipeline" "this" {
         }
         # Docs-only commits should not burn a build or nag for approval.
         file_paths {
-          excludes = ["docs/**", "**/*.md"]
+          excludes = ["docs/**", "**/*.md", "*.md"]
         }
       }
     }
