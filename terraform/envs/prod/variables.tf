@@ -28,6 +28,12 @@ variable "github_branch" {
   default = "main"
 }
 
+variable "github_connection_arn" {
+  description = "Existing AVAILABLE CodeConnections ARN to reuse. Empty creates a new (pending) connection."
+  type        = string
+  default     = ""
+}
+
 # ---------------------------------------------------------------------------
 # Network
 # ---------------------------------------------------------------------------

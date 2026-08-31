@@ -156,6 +156,7 @@ module "pipeline" {
   environment                       = var.environment
   github_repository                 = var.github_repository
   github_branch                     = var.github_branch
+  existing_connection_arn           = var.github_connection_arn
   kms_key_arn                       = aws_kms_key.this.arn
   ecr_repository_url                = module.ecr.repository_url
   ecr_repository_arn                = module.ecr.repository_arn

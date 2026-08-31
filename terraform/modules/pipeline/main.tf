@@ -3,6 +3,11 @@
 variable "name" { type = string }
 variable "github_repository" { type = string }
 variable "github_branch" { type = string }
+variable "existing_connection_arn" {
+  description = "Reuse an existing, AVAILABLE CodeConnections connection instead of creating one. Connections are account-level shared resources and need a one-time human handshake, so reuse is the norm."
+  type        = string
+  default     = ""
+}
 variable "kms_key_arn" { type = string }
 variable "ecr_repository_url" { type = string }
 variable "ecr_repository_arn" { type = string }
@@ -95,12 +100,19 @@ resource "aws_s3_bucket_policy" "artifacts" {
 }
 
 # --------------------------------------------------------------------------- #
-# GitHub connection (GitHub App). Created PENDING: the handshake must be       #
-# completed once in the console -> Developer Tools -> Connections.             #
+# GitHub connection (GitHub App). If not reusing one, it is created PENDING:   #
+# the handshake must be completed once in the console -> Developer Tools ->    #
+# Connections. Note the resource yields a legacy codestar-connections ARN;     #
+# a console-created connection yields a codeconnections ARN.                   #
 # --------------------------------------------------------------------------- #
 resource "aws_codestarconnections_connection" "github" {
+  count         = var.existing_connection_arn == "" ? 1 : 0
   name          = "${var.name}-github"
   provider_type = "GitHub"
+}
+
+locals {
+  connection_arn = var.existing_connection_arn != "" ? var.existing_connection_arn : aws_codestarconnections_connection.github[0].arn
 }
 
 # --------------------------------------------------------------------------- #
@@ -289,7 +301,7 @@ data "aws_iam_policy_document" "codepipeline" {
   statement {
     sid       = "UseGitHubConnection"
     actions   = ["codestar-connections:UseConnection", "codeconnections:UseConnection"]
-    resources = [aws_codestarconnections_connection.github.arn]
+    resources = [local.connection_arn]
   }
   statement {
     sid       = "RunBuild"
@@ -362,7 +374,7 @@ resource "aws_codepipeline" "this" {
       version          = "1"
       output_artifacts = ["SourceArtifact"]
       configuration = {
-        ConnectionArn        = aws_codestarconnections_connection.github.arn
+        ConnectionArn        = local.connection_arn
         FullRepositoryId     = var.github_repository
         BranchName           = var.github_branch
         DetectChanges        = "false" # triggers block below handles this
@@ -444,8 +456,8 @@ resource "aws_codepipeline" "this" {
 output "pipeline_name" { value = aws_codepipeline.this.name }
 output "pipeline_arn" { value = aws_codepipeline.this.arn }
 output "codebuild_project_name" { value = aws_codebuild_project.this.name }
-output "connection_arn" { value = aws_codestarconnections_connection.github.arn }
-output "connection_status" { value = aws_codestarconnections_connection.github.connection_status }
+output "connection_arn" { value = local.connection_arn }
+output "connection_status" { value = var.existing_connection_arn != "" ? "AVAILABLE (reused)" : aws_codestarconnections_connection.github[0].connection_status }
 output "artifact_bucket" { value = aws_s3_bucket.artifacts.bucket }
 output "codebuild_role_arn" { value = aws_iam_role.codebuild.arn }
 output "codepipeline_role_arn" { value = aws_iam_role.codepipeline.arn }

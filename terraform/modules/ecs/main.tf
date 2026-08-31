@@ -203,6 +203,8 @@ resource "aws_ecs_service" "this" {
 
   # CodeDeploy owns the task definition and the target-group binding after the
   # first deployment; autoscaling owns desired_count. Terraform must not fight them.
+  # platform_version: "LATEST" is stored as the resolved version (e.g. 1.4.0), and
+  # ECS refuses UpdateService on it for CODE_DEPLOY-controlled services.
   lifecycle {
     ignore_changes = [task_definition, load_balancer, desired_count, platform_version]
   }
