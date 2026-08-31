@@ -1,0 +1,120 @@
+version: 0.2
+
+# CI gates. Every phase is a hard stop: if a command exits non-zero the build
+# fails and nothing reaches ECR, let alone production.
+#
+# Environment variables injected by the CodeBuild project (see terraform/modules/pipeline):
+#   AWS_ACCOUNT_ID, AWS_DEFAULT_REGION, ECR_REPO_URL, IMAGE_REPO_NAME, CONTAINER_NAME,
+#   TASK_FAMILY, TASK_EXECUTION_ROLE_ARN, TASK_ROLE_ARN, LOG_GROUP, APP_SECRET_ARN,
+#   ENVIRONMENT, TASK_CPU, TASK_MEMORY, VALIDATION_LAMBDA_NAME, TRIVY_SEVERITY
+
+env:
+  shell: bash
+  variables:
+    TRIVY_VERSION: "0.74.0"
+    TRIVY_SEVERITY: "CRITICAL,HIGH"
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - echo "Installing CI tooling"
+      - mkdir -p reports
+      - pip install --quiet -r app/requirements-dev.txt
+      - |
+        curl -sSfL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+          | tar -xz -C /usr/local/bin trivy
+      - trivy --version
+
+  pre_build:
+    commands:
+      # ---- identity of this build -------------------------------------------------
+      - export GIT_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
+      - export BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      - export APP_VERSION="$(cat VERSION | tr -d '[:space:]')"
+      - export IMAGE_TAG="${GIT_SHA}"
+      - export IMAGE_URI="${ECR_REPO_URL}:${IMAGE_TAG}"
+      - echo "Building ${APP_VERSION} (${GIT_SHA}) -> ${IMAGE_URI}"
+
+      # ---- gate 1: static analysis -------------------------------------------------
+      - echo "==> ruff (lint + format)"
+      - (cd app && ruff check . && ruff format --check .)
+      - echo "==> bandit (Python security lint)"
+      - (cd app && bandit -q -r . -c pyproject.toml)
+
+      # ---- gate 2: dependency vulnerabilities --------------------------------------
+      - echo "==> pip-audit (known CVEs in pinned dependencies)"
+      - (cd app && pip-audit -r requirements.txt --strict)
+
+      # ---- gate 3: unit tests -------------------------------------------------------
+      - echo "==> pytest"
+      - (cd app && python -m pytest -q --junitxml=../reports/pytest.xml)
+
+      # ---- registry login -----------------------------------------------------------
+      - aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
+
+  build:
+    commands:
+      - echo "==> docker build"
+      - |
+        docker build \
+          --build-arg APP_VERSION="${APP_VERSION}" \
+          --build-arg GIT_SHA="${GIT_SHA}" \
+          --build-arg BUILD_TIME="${BUILD_TIME}" \
+          -t "${IMAGE_URI}" app/
+
+      # ---- gate 4: container image vulnerabilities ----------------------------------
+      - echo "==> trivy image scan (fail on ${TRIVY_SEVERITY}, fixed CVEs only)"
+      - trivy image --exit-code 0 --severity "${TRIVY_SEVERITY}" --format table "${IMAGE_URI}" || true
+      - trivy image --exit-code 1 --severity "${TRIVY_SEVERITY}" --ignore-unfixed --no-progress --format json -o reports/trivy.json "${IMAGE_URI}"
+
+      # ---- smoke the image locally before it leaves the build ------------------------
+      - echo "==> local container smoke test"
+      - docker run -d --name smoke -p 8000:8000 -e APP_API_KEY=ci-smoke "${IMAGE_URI}"
+      - for i in $(seq 1 15); do curl -fsS http://localhost:8000/health && break || sleep 1; done
+      - curl -fsS http://localhost:8000/ready
+      - curl -fsS http://localhost:8000/version | tee reports/version.json
+      - grep -q "\"commit\":\"${GIT_SHA}\"" reports/version.json || (echo "version endpoint does not report the built SHA" && exit 1)
+      - docker rm -f smoke
+
+  post_build:
+    commands:
+      - echo "==> push immutable image tag"
+      - docker push "${IMAGE_URI}"
+      - export IMAGE_DIGEST="$(aws ecr describe-images --repository-name "${IMAGE_REPO_NAME}" --image-ids imageTag="${IMAGE_TAG}" --query 'imageDetails[0].imageDigest' --output text)"
+      - echo "pushed ${IMAGE_URI} @ ${IMAGE_DIGEST}"
+
+      # ---- deployment artifacts consumed by the CodeDeploy ECS blue/green action -----
+      # imageDetail.json tells CodePipeline what to substitute for <IMAGE1_NAME> in taskdef.json.
+      - printf '{"ImageURI":"%s"}' "${IMAGE_URI}" > imageDetail.json
+      # Render the task definition + appspec templates with account-specific values.
+      # render.py fails the build if any ${PLACEHOLDER} is left unresolved.
+      - export APP_VERSION GIT_SHA BUILD_TIME
+      - python pipeline/render.py pipeline/taskdef.template.json taskdef.json
+      - python pipeline/render.py pipeline/appspec.yaml appspec.yaml
+      - python -c "import json; json.load(open('taskdef.json'))" && echo "taskdef.json is valid JSON"
+      - cat taskdef.json
+      - |
+        cat > build-summary.json <<EOF
+        {"version":"${APP_VERSION}","commit":"${GIT_SHA}","image":"${IMAGE_URI}","digest":"${IMAGE_DIGEST}","build_time":"${BUILD_TIME}","build_id":"${CODEBUILD_BUILD_ID}"}
+        EOF
+
+reports:
+  pytest:
+    files:
+      - reports/pytest.xml
+    file-format: JUNITXML
+
+artifacts:
+  files:
+    - imageDetail.json
+    - taskdef.json
+    - appspec.yaml
+    - build-summary.json
+  discard-paths: yes
+
+cache:
+  paths:
+    - /root/.cache/pip/**/*
+    - /root/.cache/trivy/**/*

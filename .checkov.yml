@@ -1,0 +1,39 @@
+# Checkov policy for this repository. Every skip is a deliberate decision with
+# a reason, not a way to make the scan green. Revisit before promoting this
+# pattern to a real production account.
+directory:
+  - terraform
+framework:
+  - terraform
+quiet: true
+compact: true
+skip-check:
+  # --- Cost/scope decisions for a portfolio environment ---------------------
+  - CKV_AWS_144   # S3 cross-region replication: no DR requirement here
+  - CKV_AWS_18    # S3 access logging on the log/artifact buckets themselves
+  - CKV2_AWS_62   # S3 event notifications: nothing consumes them
+  - CKV_AWS_158   # CloudWatch log groups encrypted with CMK: default encryption is sufficient for demo logs
+  - CKV_AWS_338   # 1-year log retention: 14-30 days keeps cost near zero
+  - CKV_AWS_150   # ALB deletion protection: we tear this environment down on purpose
+  - CKV2_AWS_57   # Secrets Manager rotation: no rotation Lambda for a demo secret (documented in ADR)
+  - CKV_AWS_50    # Lambda X-Ray: not needed for a 120s hook
+  - CKV_AWS_116   # Lambda DLQ: hook is invoked synchronously by CodeDeploy
+  - CKV_AWS_272   # Lambda code signing: overkill for an in-repo hook
+  - CKV_AWS_173   # Lambda env encryption with CMK: env holds only the test endpoint URL
+  # --- Accepted by design -------------------------------------------------
+  - CKV_AWS_316   # CodeBuild privileged mode: required to run `docker build`
+  - CKV_AWS_378   # Target groups speak HTTP to tasks inside the VPC; TLS terminates at the ALB
+  - CKV_AWS_2     # Test listener (8080) is HTTP, restricted by security group to the validation hook
+  - CKV_AWS_103   # Same: TLS policy only applies to the HTTPS listener, which uses TLS1.3-1.2-2021-06
+  - CKV2_AWS_20   # HTTP->HTTPS redirect exists when a certificate is configured (conditional resource)
+  - CKV_AWS_260   # Port 80 open to the world only to serve the HTTPS redirect
+  - CKV_AWS_145   # ALB access-log bucket cannot use SSE-KMS (ELB log delivery limitation)
+  - CKV_AWS_21    # ALB access-log bucket: versioning adds cost for append-only logs
+  - CKV2_AWS_5    # Security groups are attached in a different module (checkov can't see across modules)
+  - CKV_AWS_355   # ecs:RegisterTaskDefinition and codedeploy:PutLifecycleEventHookExecutionStatus have no resource-level permissions
+  - CKV_AWS_356   # same
+  - CKV_AWS_111   # same
+  - CKV_AWS_192   # Log4j AMR: Python service, no JVM
+  - CKV2_AWS_76   # Log4j AMR: Python service, no JVM
+  - CKV_AWS_109   # KMS key policy grants kms:* to the account root: the standard AWS-recommended key policy
+  - CKV2_AWS_31   # WAF logging configuration exists (aws_wafv2_web_acl_logging_configuration) but checkov cannot link count-indexed resources

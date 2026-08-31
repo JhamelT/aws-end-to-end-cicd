@@ -1,204 +1,136 @@
-# AWS End-to-End CI/CD for a Containerized Python App
+# AWS Blue/Green CI/CD for a Containerized Python API
 
-Hi, I’m Jha’Mel. This repo demonstrates an end-to-end CI/CD pipeline on AWS for a small Flask app running in Docker.  
+**GitHub → CodePipeline → CodeBuild (lint · tests · dependency + container scans) → immutable ECR image → manual approval → CodeDeploy ECS blue/green with canary traffic shifting → ALB (ACM/WAF) → CloudWatch alarm-based rollback. All of it provisioned with Terraform.**
 
-A push to this GitHub repo triggers **AWS CodePipeline**, which uses **CodeBuild** to build and push a Docker image to Docker Hub, then uses **CodeDeploy** to deploy the latest image on an EC2 instance.
+This is the second version of this repository. [v1](https://github.com/JhamelT/aws-end-to-end-cicd/tree/v1-ec2-codedeploy) pushed a `:latest` image to Docker Hub and had CodeDeploy run shell scripts on a single EC2 box. It worked, and it had every problem a real release process is designed to prevent: no tests, no scanning, mutable tags, one instance, downtime on every deploy, and "rollback" meant rebuilding the previous version by hand. v2 is what I'd actually put in front of a security review.
 
----
+## The scenario
 
-## 🚀 What This Project Shows
-- Practical CI/CD on AWS: **CodePipeline → CodeBuild → CodeDeploy**
-- **Dockerized** Python app with health endpoint
-- **Secrets** pulled from **SSM Parameter Store** in the build stage
-- Safe, simple **lifecycle scripts** to stop/remove the old container and run the new one
+A small SaaS team deploys a Python API by hand. Every release causes a blip of downtime, nobody is sure which commit is running in production, and rolling back means finding someone who remembers what the last good build was. The ask: make releases boring.
 
----
+Success criteria I designed against:
 
-## 🔄 How It Works
-1. **Source (GitHub)**  
-   Commit to this repository triggers CodePipeline.  
-2. **Build (CodeBuild)**  
-   - Starts Docker-in-Docker  
-   - Logs into Docker Hub with creds from **Parameter Store**  
-   - Builds and pushes `jhamelthorne/myapp:latest`  
-3. **Deploy (CodeDeploy on EC2)**  
-   - `ApplicationStop` → `scripts/stop_container.sh`  
-   - `AfterInstall` → `scripts/start_container.sh`  
-4. **Run (EC2)**  
-   - Container listens on **port 5000**  
-   - Endpoints: `/` and `/health`
+| Requirement | How it's met |
+|---|---|
+| Zero-downtime releases | ECS blue/green: green task set is fully healthy before any traffic moves |
+| Nothing unreviewed reaches prod | Ruff, Bandit, pytest, pip-audit, Trivy, and a manual approval gate |
+| Know exactly what's running | Immutable ECR tags = git SHA; `/version` returns the commit; the validation hook refuses to promote a mismatch |
+| Rollback in seconds, not minutes | CodeDeploy keeps blue warm for a 5-minute bake; rollback is a listener swap |
+| Failures roll back on their own | AfterAllowTestTraffic hook + ALB 5XX / latency / unhealthy-host alarms wired to auto-rollback |
+| Survive an AZ loss | 2 AZs, minimum 2 tasks, target-tracking autoscaling to 6 |
 
----
+## Architecture
 
-## 📂 Repository Structure
 ```
-.
-├─ appspec.yml               # CodeDeploy hooks → start/stop container
-├─ buildspec.yml             # CodeBuild → build & push Docker image
-├─ scripts/
-│  ├─ start_container.sh     # pull & run latest image
-│  └─ stop_container.sh      # stop/remove existing container
-└─ simple-python-app/
-   ├─ app.py                 # Flask app (/, /health)
-   ├─ requirements.txt       # flask
-   └─ Dockerfile             # EXPOSE 5000; CMD ["python","app.py"]
-```
+                 developer push to main
+                          │
+                          ▼
+   GitHub ──CodeConnections──▶ CodePipeline (V2, push trigger; docs-only commits ignored)
+                                    │
+                    ┌───────────────┼──────────────────┐
+                    ▼               ▼                  ▼
+              Build_Test_Scan   Approve_Production   Deploy_BlueGreen
+              (CodeBuild)       (manual, SNS email)  (CodeDeploy → ECS)
+              ├ ruff / bandit
+              ├ pip-audit
+              ├ pytest
+              ├ docker build
+              ├ trivy (CRITICAL/HIGH, fixed only)
+              ├ local smoke test
+              └ push  ECR :<git-sha>  (immutable, KMS, scan-on-push)
 
----
+   ┌───────────────────────── VPC 10.40.0.0/16, 2 AZs ─────────────────────────┐
+   │  public subnets                        private subnets                    │
+   │  ┌──────────────────────┐              ┌──────────────────────────────┐   │
+   │  │ ALB  (+ WAF, ACM)    │              │ ECS Fargate service          │   │
+   │  │  :443 prod listener ─┼─▶ blue TG ───┼─▶ task set A  (2–6 tasks)    │   │
+   │  │  :80  → 301 to 443   │              │                              │   │
+   │  │  :8080 test listener ┼─▶ green TG ──┼─▶ task set B  (during deploy)│   │
+   │  └──────────────────────┘              └──────────────┬───────────────┘   │
+   │           ▲  restricted to NAT EIP + admin CIDRs      │ NAT (1×) + S3 GW   │
+   │           │                                           ▼                    │
+   │   validation Lambda (in VPC) ◀── CodeDeploy hook   ECR · Logs · Secrets   │
+   └────────────────────────────────────────────────────────────────────────────┘
 
-## 🗂 Key Files
-
-### appspec.yml (CodeDeploy)
-```yaml
-version: 0.0
-os: linux
-hooks:
-  ApplicationStop:
-    - location: scripts/stop_container.sh
-      timeout: 300
-      runas: root
-  AfterInstall:
-    - location: scripts/start_container.sh
-      timeout: 300
-      runas: root
+   Route 53  app.<domain>  ──alias──▶ ALB          CloudWatch: alarms → SNS → email
+                                                   EventBridge: pipeline/deploy state → SNS
 ```
 
-### buildspec.yml (CodeBuild – excerpt)
-```yaml
-version: 0.2
-env:
-  parameter-store:
-    DOCKER_REGISTRY_USERNAME: /myapp/docker-credentials/username
-    DOCKER_REGISTRY_PASSWORD: /myapp/docker-credentials/password
-    DOCKER_REGISTRY_URL: /myapp/docker-registry/url
+Per release, CodeDeploy does the following, and each arrow is a place it can stop and roll back:
 
-phases:
-  install:
-    runtime-versions:
-      python: 3.11
-    commands:
-      - nohup /usr/local/bin/dockerd         --host=unix:///var/run/docker.sock         --host=tcp://127.0.0.1:2376         --storage-driver=overlay2 &
-      - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
-  pre_build:
-    commands:
-      - echo $DOCKER_REGISTRY_PASSWORD | docker login -u $DOCKER_REGISTRY_USERNAME --password-stdin
-      - pip install -r simple-python-app/requirements.txt
-  build:
-    commands:
-      - cd simple-python-app
-      - docker build -t jhamelthorne/myapp:latest .
-      - docker push jhamelthorne/myapp:latest
+1. Registers a **green task set** from the new task definition and waits for it to pass ALB health checks on the **test listener** (port 8080).
+2. Invokes the **AfterAllowTestTraffic** Lambda. It reads the task definition CodeDeploy is deploying, hits `/health`, `/ready`, `/version` through the test listener, and fails the deployment if the commit doesn't match or readiness fails.
+3. Shifts production traffic **10% to green for 2 minutes** (canary), watching the rollback alarms, then **100%**.
+4. Keeps **blue warm for 5 minutes**. Rollback during the bake is a listener swap.
+5. Terminates blue.
+
+## What's in the repo
+
+```
+app/                       FastAPI service: /, /health, /ready, /version; JSON logs; non-root image
+pipeline/
+  buildspec.yml            CI gates + image build + artifact rendering (runs in CodeBuild)
+  taskdef.template.json    ECS task definition template (image + account values injected at build)
+  appspec.yaml             CodeDeploy AppSpec with the AfterAllowTestTraffic hook
+  render.py                fails the build on any unresolved ${PLACEHOLDER}
+  hooks/validate_green/    the validation Lambda
+terraform/
+  bootstrap/               remote-state bucket (applied once)
+  envs/prod/               the environment: composes the modules below
+  modules/network          VPC, subnets, NAT, S3 endpoint, flow logs, inert default SG
+  modules/alb              ALB, blue/green TGs, prod+test listeners, WAF, access logs
+  modules/ecr              immutable, KMS-encrypted, lifecycle-pruned repository
+  modules/ecs              cluster, split task/execution roles, Secrets Manager, service, autoscaling
+  modules/codedeploy       app, canary deployment config, deployment group, hook Lambda
+  modules/pipeline         CodeConnections, CodeBuild, CodePipeline V2, artifact bucket
+  modules/observability    rollback alarms, ops alarms, SNS, EventBridge, dashboard
+  modules/dns              ACM certificate + DNS validation
+docs/
+  adr/                     why ECS over EKS, why CodeDeploy, why one NAT, why immutable tags
+  runbook.md               deploy, verify, force a rollback, break glass, tear down
+.github/workflows/         PR checks with no AWS credentials: tests, fmt, validate, tflint, checkov
+.checkov.yml               every skipped policy has a reason next to it
 ```
 
-### Lifecycle Scripts
+## Running it
 
-**scripts/stop_container.sh**
+Prerequisites: Terraform ≥ 1.10, AWS CLI v2 with credentials for a sandbox account, Docker (only for `make run`), a Route 53 hosted zone if you want HTTPS (leave `domain_name = ""` for an HTTP-only ALB).
+
 ```bash
-#!/usr/bin/env bash
-set -e
-
-NAME="simple-python-app"
-docker rm -f "$NAME" >/dev/null 2>&1 || true
-echo "[stop] Ensured $NAME is not running."
+make test                          # the same gates CodeBuild runs
+make bootstrap                     # once: remote state bucket
+make init                          # backend config from your account ID
+make plan NOTIFICATION_EMAIL=you@example.com TF_ARGS='-var admin_cidrs=["<your-ip>/32"]'
+make apply
 ```
 
-**scripts/start_container.sh**
+After the first apply there are two one-time manual steps, both by design:
+
+1. **Finish the GitHub connection.** AWS creates it `PENDING`; the GitHub App handshake has to be authorized by a human in the console (Developer Tools → Settings → Connections → Update pending connection).
+2. **Confirm the SNS email subscription**, or approval requests and rollback notices go nowhere.
+
+Then push to `main`. The pipeline runs, pauses at `Approve_Production`, and on approval performs the first blue/green deployment from the bootstrap placeholder to your image.
+
 ```bash
-#!/usr/bin/env bash
-set -e
-
-IMAGE="jhamelthorne/myapp:latest"
-NAME="simple-python-app"
-PORT="5000"   # matches app.py and Dockerfile
-
-echo "[start] Pulling latest image: $IMAGE"
-docker pull "$IMAGE"
-
-echo "[start] Starting container $NAME on :$PORT"
-docker run -d --name "$NAME" --restart=always -p ${PORT}:5000 "$IMAGE"
-
-# Lightweight, non-fatal sanity check
-sleep 2
-if curl -fsS "http://localhost:${PORT}/health" >/dev/null; then
-  echo "[start] Health OK."
-else
-  echo "[start] App starting; health endpoint not ready yet."
-fi
+make release-status                # pipeline stages + latest deployment
+make smoke                         # hit /version 10× — during a canary you'll see two commits interleave
 ```
 
-### Application (Flask)
+See [docs/runbook.md](docs/runbook.md) for the failure drill: set `SIMULATE_FAILURE=true` in the task definition template, push, approve, and watch the hook fail the deployment and CodeDeploy roll back with production never having served the bad build.
 
-**app.py**
-```python
-from flask import Flask
-app = Flask(__name__)
+## Cost
 
-@app.route('/')
-def hello():
-    return '<h1>Hello, World! Your CI/CD Pipeline is working!</h1>'
+Roughly **$2.50–3.00/day** while up in us-east-1: ALB (~$0.55), one NAT Gateway (~$1.10 + data), two 0.5 vCPU / 1 GB Fargate tasks (~$0.60), WAF (~$0.30), plus cents for KMS, CodeBuild minutes, ECR storage and logs. `make destroy` removes everything except the state bucket.
 
-@app.route('/health')
-def health():
-    return {'status': 'healthy', 'message': 'Application is running successfully'}
+## Things I'd change for a real production account
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-```
+- **Separate accounts** for CI, staging and prod, with the pipeline assuming a cross-account deploy role. One account is fine for a demo and wrong for a company.
+- **NAT per AZ**, or interface endpoints for ECR/Logs/Secrets so the tasks have no NAT dependency at all.
+- **A second human gate** at CodeDeploy's `deployment_ready_option` (STOP_DEPLOYMENT) for regulated workloads that need explicit sign-off on the traffic shift itself, not just on starting the deployment.
+- **Secret rotation** with a rotation Lambda; the demo secret is generated at apply and never rotated.
+- **Database migrations** using expand/contract so blue and green can run against the same schema during the bake.
 
-**Dockerfile**
-```dockerfile
-FROM python:3.8
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 5000
-CMD ["python", "app.py"]
-```
+## Related
 
----
-
-## ⚙️ One-Time Setup
-- **EC2**:  
-  - Amazon Linux 2, Docker installed, CodeDeploy agent installed  
-  - Security group allows inbound 5000 (or route via ALB)  
-
-- **IAM**:  
-  - CodeBuild role: `ssm:GetParameters`, CloudWatch Logs  
-  - CodeDeploy service role: standard deploy permissions  
-  - EC2 instance profile: S3 read for CodeDeploy bundle  
-
-- **Parameter Store**:  
-  - `/myapp/docker-credentials/username`  
-  - `/myapp/docker-credentials/password`  
-  - `/myapp/docker-registry/url`
-
----
-
-## 🏃 Run Locally
-```bash
-cd simple-python-app
-docker build -t myapp:local .
-docker run -p 5000:5000 myapp:local
-```
-
-Test at:
-- `http://localhost:5000`
-- `http://localhost:5000/health`
-
----
-
-## 🔧 Troubleshooting
-- **Port/name in use:** handled by `stop_container.sh`  
-- **Image push fails:** check Docker Hub creds in Parameter Store  
-- **App unreachable:** confirm EC2 SG allows 5000; check `docker logs simple-python-app`  
-- **Health flaky:** run `curl -v http://localhost:5000/health` on EC2  
-
----
-
-## 📈 Next Steps (Future Enhancements)
-- Add a small **pytest** to test `/health` in CodeBuild  
-- Use **python:3.11-slim** as base image for security/performance  
-- Push to **ECR** and deploy with **ECS Fargate**  
-- Send logs to **CloudWatch Logs** and add alarms  
-
+- Thursday learning post: *Blue/Green vs Rolling vs Canary — and why this pipeline uses two of them at once.*
+- Previous projects in this series: security remediation platform · Terraform 3-tier app · EKS game deployment

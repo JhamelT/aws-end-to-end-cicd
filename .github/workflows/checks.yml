@@ -1,0 +1,45 @@
+# Pull-request gates that need no AWS credentials. The AWS-native pipeline
+# handles build/scan/deploy; this catches broken Terraform and failing tests
+# before a merge to main ever triggers it.
+name: checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: app lint + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements-dev.txt
+      - run: pip install -r app/requirements-dev.txt
+      - run: cd app && ruff check . && ruff format --check .
+      - run: cd app && bandit -q -r . -c pyproject.toml
+      - run: cd app && pip-audit -r requirements.txt --strict
+      - run: cd app && python -m pytest -q
+      - run: ruff check pipeline
+
+  terraform:
+    name: terraform fmt + validate + tflint + checkov
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.0"
+      - run: terraform fmt -check -recursive terraform/
+      - run: terraform -chdir=terraform/envs/prod init -backend=false -input=false
+      - run: terraform -chdir=terraform/envs/prod validate
+      - uses: terraform-linters/setup-tflint@v4
+      - run: tflint --init && tflint --chdir=terraform/envs/prod --recursive
+      - run: pip install checkov && checkov --config-file .checkov.yml

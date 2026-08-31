@@ -1,0 +1,18 @@
+# CodeDeploy AppSpec for ECS blue/green.
+# <TASK_DEFINITION> is replaced by CodePipeline with the ARN of the task definition
+# it registers from taskdef.json during the CodeDeployToECS action.
+version: 0.0
+Resources:
+  - TargetService:
+      Type: AWS::ECS::Service
+      Properties:
+        TaskDefinition: <TASK_DEFINITION>
+        LoadBalancerInfo:
+          ContainerName: "${CONTAINER_NAME}"
+          ContainerPort: 8000
+        PlatformVersion: "LATEST"
+Hooks:
+  # Runs after the green task set is registered with the TEST listener and
+  # before any production traffic moves. Fails the deployment (-> rollback)
+  # if the new release is not healthy, not ready, or not the commit we built.
+  - AfterAllowTestTraffic: "${VALIDATION_LAMBDA_NAME}"

@@ -1,0 +1,57 @@
+{
+  "family": "${TASK_FAMILY}",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "${TASK_CPU}",
+  "memory": "${TASK_MEMORY}",
+  "executionRoleArn": "${TASK_EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${TASK_ROLE_ARN}",
+  "runtimePlatform": {
+    "operatingSystemFamily": "LINUX",
+    "cpuArchitecture": "X86_64"
+  },
+  "containerDefinitions": [
+    {
+      "name": "${CONTAINER_NAME}",
+      "image": "<IMAGE1_NAME>",
+      "essential": true,
+      "readonlyRootFilesystem": true,
+      "user": "10001",
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp", "name": "http" }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT", "value": "${ENVIRONMENT}" },
+        { "name": "APP_VERSION", "value": "${APP_VERSION}" },
+        { "name": "GIT_SHA", "value": "${GIT_SHA}" },
+        { "name": "BUILD_TIME", "value": "${BUILD_TIME}" },
+        { "name": "SIMULATE_FAILURE", "value": "false" }
+      ],
+      "secrets": [
+        { "name": "APP_API_KEY", "valueFrom": "${APP_SECRET_ARN}" }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"],
+        "interval": 15,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 15
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "${LOG_GROUP}",
+          "awslogs-region": "${AWS_DEFAULT_REGION}",
+          "awslogs-stream-prefix": "app"
+        }
+      },
+      "linuxParameters": {
+        "initProcessEnabled": true
+      }
+    }
+  ],
+  "tags": [
+    { "key": "app_version", "value": "${APP_VERSION}" },
+    { "key": "git_sha", "value": "${GIT_SHA}" }
+  ]
+}
