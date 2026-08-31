@@ -118,6 +118,36 @@ make smoke                         # hit /version 10× — during a canary you'l
 
 See [docs/runbook.md](docs/runbook.md) for the failure drill: set `SIMULATE_FAILURE=true` in the task definition template, push, approve, and watch the hook fail the deployment and CodeDeploy roll back with production never having served the bad build.
 
+## What building it actually looked like
+
+Everything below happened on the first day, and each one is in the commit history. They are the part of this project I'd want to talk about in an interview.
+
+| What happened | Why it matters | Fix |
+|---|---|---|
+| `pip-audit` rejected the first FastAPI pin — five published CVEs in the Starlette underneath it | The dependency gate paid for itself before the pipeline had deployed anything | Bumped to current pins |
+| Trivy failed `python:3.12-slim` with 28 HIGH/CRITICAL | Slim base images drift between rebuilds; "official image" is not "patched image" | `apt-get upgrade` at build time; dropped `curl`, health checks use Python |
+| CodeBuild ran `post_build` after `build` failed and **pushed the unscanned image to ECR** | CodeBuild's default is to continue into `post_build` on failure | `on-failure: ABORT` on every phase before the push |
+| A unit test asserted `environment == "local"` and CodeBuild sets `ENVIRONMENT=prod` | Tests that read ambient env are not tests | Fixture pins every variable the app reads |
+| Push trigger dead while the Source stage was green | The AWS Connector GitHub App was *authorized* for the user but never *installed* on the account — cloning works on a user token, webhooks only come from an installation | Installed the app; pipeline reuses a `codeconnections` connection bound to that installation |
+| `for_each` over a CIDR list containing the NAT EIP failed at plan | `for_each` keys must be known at plan time; EIPs are not | `count` |
+| Terraform tried to "fix" `platform_version` on the ECS service and ECS refused | `LATEST` resolves to `1.4.0` after creation, and CODE_DEPLOY-controlled services reject `UpdateService` for it | `ignore_changes` |
+| First validation hook crashed on `KeyError('appSpecContent')` | CodePipeline registers CodeDeploy revisions as S3, not `AppSpecContent`; parsing the revision was the wrong idea | Hook finds the green task set by `externalId == deploymentId` |
+
+That last one is worth pausing on: the hook crashed, reported `Failed` in its `finally`, and CodeDeploy rolled back with production untouched. A validation step that fails closed is worth more than one that is clever.
+
+### Measured
+
+From the evidence in [`docs/evidence/`](docs/evidence/):
+
+| Step | Time |
+|---|---|
+| `terraform apply`, 107 resources | ~6 min |
+| CodeBuild (lint, tests, audit, build, Trivy, smoke, push), warm cache | 1 min 39 s |
+| Approval → green healthy → hook passed | 2 min 09 s |
+| Canary 10% → 100% | 2 min |
+| Bake, then blue terminated → deployment `Succeeded` | 9 min 14 s end to end |
+| Failure drill: approval → hook `Failed` (18 attempts over 90 s) → auto-rollback | 3 min 41 s, zero production requests served by the bad build |
+
 ## Cost
 
 Roughly **$2.50–3.00/day** while up in us-east-1: ALB (~$0.55), one NAT Gateway (~$1.10 + data), two 0.5 vCPU / 1 GB Fargate tasks (~$0.60), WAF (~$0.30), plus cents for KMS, CodeBuild minutes, ECR storage and logs. `make destroy` removes everything except the state bucket.

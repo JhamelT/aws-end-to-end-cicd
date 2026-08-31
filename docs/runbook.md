@@ -72,6 +72,9 @@ Not rollback signals (page only): ECS CPU/memory > 85% for 5 min. CPU alone says
 ## 7. First-time setup gotchas
 
 - **GitHub connection PENDING**: Terraform cannot complete the GitHub App handshake. Console → Developer Tools → Settings → Connections → *Update pending connection*. Until then the pipeline's Source stage fails.
+- **Source works but pushes don't trigger the pipeline**: the "AWS Connector for GitHub" app is *authorized* for your user but not *installed* on the account/org. Install it at `github.com/apps/aws-connector-for-github/installations/new`, create a connection against that installation, and set `github_connection_arn`. Connections are account-level shared resources; prefer reusing one over creating one per stack.
+- **Build fails but an image still lands in ECR**: `post_build` ran after `build` failed. Every phase before the push must carry `on-failure: ABORT` (they do; don't remove it).
+- **`terraform apply` fails with "Unable to update platform version"**: something removed `platform_version` from the ECS service's `ignore_changes`.
 - **SNS subscription unconfirmed**: approvals still work in the console, but no emails arrive.
 - **First deployment from bootstrap**: the ECS service starts on a public `python:3.12-slim` placeholder that serves `/health`. The first pipeline run replaces it via a real blue/green deployment. `/version` returns `bootstrap` until then.
 - **ACM validation**: DNS validation can take 5–30 minutes after registration; `terraform apply` waits on it.
