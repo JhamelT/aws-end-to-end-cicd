@@ -9,6 +9,8 @@ def client(monkeypatch):
     monkeypatch.setenv("APP_VERSION", "v9.9.9-test")
     monkeypatch.setenv("GIT_SHA", "abc1234def")
     monkeypatch.setenv("APP_API_KEY", "test-secret")
+    # Pin everything the app reads so CI env vars (CodeBuild sets ENVIRONMENT=prod) cannot leak in.
+    monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.delenv("SIMULATE_FAILURE", raising=False)
     import main
 
@@ -42,7 +44,7 @@ def test_version_reports_build_metadata(client):
     body = client.get("/version").json()
     assert body["version"] == "v9.9.9-test"
     assert body["commit"] == "abc1234def"
-    assert body["environment"] == "local"
+    assert body["environment"] == "test"
 
 
 def test_request_id_and_release_headers(client):
