@@ -37,9 +37,10 @@ ecs = boto3.client("ecs")
 
 
 def _get(path: str, timeout: float = 5.0) -> tuple[int, str]:
-    req = urllib.request.Request(f"{TEST_ENDPOINT}{path}", headers={"x-request-id": "codedeploy-validation"})
+    # S310: the scheme and host come from TEST_ENDPOINT, a Terraform-set env var, not from user input.
+    req = urllib.request.Request(f"{TEST_ENDPOINT}{path}", headers={"x-request-id": "codedeploy-validation"})  # noqa: S310
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed scheme/host from env
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             return resp.status, resp.read().decode()
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode(errors="replace")

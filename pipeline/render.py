@@ -18,7 +18,8 @@ PLACEHOLDER = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 
 def main(src: str, dst: str) -> int:
-    text = open(src, encoding="utf-8").read()
+    with open(src, encoding="utf-8") as fh:
+        text = fh.read()
     missing = sorted({m for m in PLACEHOLDER.findall(text) if not os.environ.get(m)})
     if missing:
         print(f"render.py: unresolved placeholders in {src}: {', '.join(missing)}", file=sys.stderr)

@@ -1,0 +1,10 @@
+# Lint the pipeline helpers (render.py, the CodeDeploy validation hook) with the
+# same explicit rule set the application uses, so a `# noqa: S310` written for a
+# security rule is a valid suppression here too rather than dead RUF100 noise.
+# app/ carries its own [tool.ruff] block in app/pyproject.toml.
+line-length = 120
+target-version = "py312"
+exclude = ["app"]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "S"]
