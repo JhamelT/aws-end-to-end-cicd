@@ -12,6 +12,10 @@ variable "name" { type = string }
 variable "vpc_id" { type = string }
 variable "public_subnet_ids" { type = list(string) }
 variable "container_port" { type = number }
+variable "enable_https" {
+  description = "Known at plan time (unlike the certificate ARN), so count/for_each can depend on it."
+  type        = bool
+}
 variable "certificate_arn" {
   type    = string
   default = ""
@@ -24,7 +28,7 @@ variable "enable_waf" { type = bool }
 variable "log_retention_days" { type = number }
 
 locals {
-  https = var.certificate_arn != ""
+  https = var.enable_https
 }
 
 # --------------------------------------------------------------------------- #

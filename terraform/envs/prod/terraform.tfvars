@@ -8,7 +8,7 @@ environment = "prod"
 github_repository = "JhamelT/aws-end-to-end-cicd"
 github_branch     = "main"
 
-domain_name = "jhamelthorne.cloud"
+domain_name = "jhamelthedevopseng.com"
 subdomain   = "app"
 
 desired_count = 2

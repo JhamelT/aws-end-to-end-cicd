@@ -75,6 +75,7 @@ module "alb" {
   vpc_id             = module.network.vpc_id
   public_subnet_ids  = module.network.public_subnet_ids
   container_port     = local.container_port
+  enable_https       = local.use_domain
   certificate_arn    = local.use_domain ? module.dns[0].certificate_arn : ""
   enable_waf         = var.enable_waf
   log_retention_days = var.log_retention_days
