@@ -23,3 +23,4 @@ enable_waf = true
 
 # Set in an untracked file or on the command line:
 #   terraform apply -var 'notification_email=you@example.com' -var 'admin_cidrs=["203.0.113.4/32"]'
+github_connection_arn = "arn:aws:codeconnections:us-east-1:302263050751:connection/603542af-dfec-41c7-8652-fe32dee9fc33"
