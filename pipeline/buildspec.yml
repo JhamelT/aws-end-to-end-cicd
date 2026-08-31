@@ -14,8 +14,11 @@ env:
     TRIVY_VERSION: "0.74.0"
     TRIVY_SEVERITY: "CRITICAL,HIGH"
 
+# on-failure: ABORT matters. CodeBuild's default is to run post_build even when
+# build fails, which would push an image that just failed its scan.
 phases:
   install:
+    on-failure: ABORT
     runtime-versions:
       python: 3.12
     commands:
@@ -28,6 +31,7 @@ phases:
       - trivy --version
 
   pre_build:
+    on-failure: ABORT
     commands:
       # ---- identity of this build -------------------------------------------------
       - export GIT_SHA="${CODEBUILD_RESOLVED_SOURCE_VERSION:0:7}"
@@ -55,6 +59,7 @@ phases:
       - aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com"
 
   build:
+    on-failure: ABORT
     commands:
       - echo "==> docker build"
       - |
